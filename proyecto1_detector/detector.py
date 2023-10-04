@@ -5,6 +5,7 @@ import cv2 as cv
 import matplotlib.pyplot as plt
 import sys
 from joblib import load
+from threading import Thread
 
 def number2char(num):
     """
@@ -226,7 +227,7 @@ def encontrar_placa(binarized2, contours, hierarchy):
     else:
         return (bandera_siguiente,"","","","","")
 
-def encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente, x1,y1, model):
+def encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente, x1,y1,w1,h1, model):
     """
     Encuentra y reconoce caracteres dentro de una imagen binarizada y devuelve los resultados.
 
@@ -281,6 +282,7 @@ def encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente
                 #Aqui se filtra la proporcion, mayor height que width
                 aspect_ratio = float(w)/h
                 if(aspect_ratio < 1): 
+                    
                     #La media de los pixeles de la region de interes debe de ser mayor a 0.7, debido a que todo el caracter debe de ocupar el rectangulo
                     if(np.mean(region_of_interest) > 0.7):
                         
@@ -294,34 +296,45 @@ def encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente
                             nuevo_tamano = (75, 100)  
                             imagen_redimensionada = cv.resize(region_of_interest2, nuevo_tamano)
                             imagen_redimensionada = imagen_redimensionada.reshape(1, -1)
-                            
                             #Se dibujan los cuadrados verdes en los caracteres encontrados
-                            if(bandera_siguiente == 1):
-                                cv.rectangle(imagen_final, (x1 +x,  y1 + y), (x1 +x+w, y1 +y+h), (0, 255, 0), 2)
-                            else:
-                                cv.rectangle(imagen_final, (x, y), (x+w,y+h), (0, 255, 0), 2)
+                            # if(bandera_siguiente == 1):
+                            #     cv.rectangle(imagen_final, (x1 +x,  y1 + y), (x1 +x+w, y1 +y+h), (0, 255, 0), 2)
+                            # else:
+                            #     cv.rectangle(imagen_final, (x, y), (x+w,y+h), (0, 255, 0), 2)
                             found = False
 
                             #Se ordena en base a la poiscion de y
                             for altura_existente, caracteres in contornos_dict.items():
-                                if abs(y - altura_existente) < 5:
-                                    caracteres.append([x, imagen_redimensionada, ])
-                                    found = True
-                                    break
+                                if abs(y - altura_existente) < 9:
+                                    if(bandera_siguiente == 1):
+                                        caracteres.append([x, imagen_redimensionada, "cv.rectangle(imagen_final, (" + str(x1) + " + " + str(x) + ", " + str(y1) + " + " + str(y) + "), (" + str(x1) + " + " + str(x) + " + " + str(w) + ", " + str(y1) + " + " + str(y) + " + " + str(h) + "), (0, 255, 0), 2)",[y,w,h,w1,h1]])
+                                        found = True
+                                        break
+                                    else:
+                                        caracteres.append([x, imagen_redimensionada, "cv.rectangle(imagen_final, (" + str(x) + ", " + str(y) + "), (" + str(x) + " + " + str(w) + ", " + str(y) + " + " + str(h) + "), (0, 255, 0), 2)",[y,w,h,w1,h1]])
+                                        found = True
+                                        break
                             if not found:
                                 # Crea una nueva entrada en el diccionario para la nueva fila
-                                contornos_dict[y] = [[x, imagen_redimensionada]]
+                                if(bandera_siguiente == 1):
+                                    contornos_dict[y] = [[x, imagen_redimensionada, "cv.rectangle(imagen_final, (" + str(x1) + " + " + str(x) + ", " + str(y1) + " + " + str(y) + "), (" + str(x1) + " + " + str(x) + " + " + str(w) + ", " + str(y1) + " + " + str(y) + " + " + str(h) + "), (0, 255, 0), 2)", [y,w,h,w1,h1]]]
+
+                                else:
+                                    contornos_dict[y] = [[x, imagen_redimensionada, "cv.rectangle(imagen_final, (" + str(x) + ", " + str(y) + "), (" + str(x) + " + " + str(w) + ", " + str(y) + " + " + str(h) + "), (0, 255, 0), 2)",[y,w,h,w1,h1]]]
 
     #Se ordena en base a la posicion de x     
     contornos_dict = dict(sorted(contornos_dict.items()))
     for clave, lista in contornos_dict.items():
         contornos_dict[clave] = sorted(lista, key=lambda x: x[0])
 
-    #Se genera una sola lista.
+
+    # Se genera una sola lista.
     text = []
     for key,value in contornos_dict.items():
-        for imagenes in value:
-            text.append(imagenes[1])
+        if(len(value) > 1):
+            for imagenes in value:
+                eval(imagenes[2])
+                text.append(imagenes[1])
 
     #Se realiza la prediccion de los caracteres
     if(len(text) > 0):
@@ -337,47 +350,65 @@ def encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente
         resultados = ""
     return (imagen_final, resultados)
 
+def thread1(gray, model):
+    global imagen_final1, text1
+    binarized2 = binarizacion(gray, 127)
+    contours, hierarchy = encontrar_contornos(binarized2)
+    bandera_siguiente,x1,y1,w1,h1,placa = encontrar_placa(binarized2, contours, hierarchy)
+    if(bandera_siguiente == 1):
+        binarized2 = placa
+        contours, hierarchy = encontrar_contornos(placa)
+    imagen_final1, text1 = encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente, x1,y1,w1,h1, model)
+    return imagen_final1, text1
+
+def thread2(gray, model):
+    global imagen_final2, text2
+    binarized2 = binarizacion(gray, 71)
+    contours, hierarchy = encontrar_contornos(binarized2)
+    bandera_siguiente,x1,y1,w1,h1,placa = encontrar_placa(binarized2, contours, hierarchy)
+    if(bandera_siguiente == 1):
+        binarized2 = placa
+        contours, hierarchy = encontrar_contornos(placa)
+    imagen_final2, text2 = encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente, x1,y1,w1,h1, model)
+    return imagen_final2, text2
 
 
+
+imagen_final1 = None
+text1 = None
+
+imagen_final2 = None
+text2 = None
 
 if(len(sys.argv) >= 2):
     bandera = sys.argv[1]
     if(bandera == "--p"):
         img_path = sys.argv[2]
+        
 
-        model = load('./modelo_imagen_procesada.joblib')
+        model = load('./modelo_final.joblib')
         img, gray = leer_imagenes(img_path)
 
-        #Primer Tresh
-        binarized2 = binarizacion(gray, 127)
-        contours, hierarchy = encontrar_contornos(binarized2)
-        bandera_siguiente,x1,y1,w1,h1,placa = encontrar_placa(binarized2, contours, hierarchy)
-        if(bandera_siguiente == 1):
-            binarized2 = placa
-            contours, hierarchy = encontrar_contornos(placa)
-        imagen_final1, text1 = encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente, x1,y1, model)
+        t1 = Thread(target=thread1, args=(gray, model))
+        t2 = Thread(target=thread2, args=(gray, model))
+        
+        t1.start()
+        t2.start()
 
-        #Segundo Tresh
-        binarized2 = binarizacion(gray, 127)
-        contours, hierarchy = encontrar_contornos(binarized2)
-        bandera_siguiente,x1,y1,w1,h1,placa = encontrar_placa(binarized2, contours, hierarchy)
-        if(bandera_siguiente == 1):
-            binarized2 = placa
-            contours, hierarchy = encontrar_contornos(placa)
-        imagen_final2, text2 = encontrar_caracteres(img, binarized2, contours, hierarchy, bandera_siguiente, x1,y1, model)
+        t1.join()
+        t2.join()
 
         if(len(text1) > len(text2)):
             print(text1)
             cvlib.imgview(imagen_final1)
         elif(len(text2) > len(text1)):
             print(text2)
-            print("yes")
             cvlib.imgview(imagen_final2)
         else:
             print(text1)
             cvlib.imgview(imagen_final1)
 
     else:
-        print("Debe de ingresar todos los parametros: detector.py --p ./imagenes/images108.jpg")
+        print("Debe de ingresar todos los parametros: python detector.py --p ./imagenes/images108.jpg")
 else:
-        print("Debe de ingresar todos los parametros: detector.py --p ./imagenes/images108.jpg")
+        print("Debe de ingresar todos los parametros: python detector.py --p ./imagenes/images108.jpg")
